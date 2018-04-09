@@ -167,6 +167,10 @@ allowed_user(struct passwd * pw)
 	    strcasecmp(options.chroot_directory, "none") == 0) {
 		char *shell = xstrdup((pw->pw_shell[0] == '\0') ?
 		    _PATH_BSHELL : pw->pw_shell); /* empty = /bin/sh */
+		char *sp = strchr(shell, ' '); /* Separate only into commands. */
+		if (sp != NULL) {
+			*sp = '\0';
+		}
 
 		if (stat(shell, &st) != 0) {
 			logit("User %.100s not allowed because shell %.100s "

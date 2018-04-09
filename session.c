@@ -1470,7 +1470,7 @@ child_close_fds(struct ssh *ssh)
  * environment, closing extra file descriptors, setting the user and group
  * ids, and executing the command or shell.
  */
-#define ARGV_MAX 10
+#define ARGV_MAX 20
 void
 do_child(struct ssh *ssh, Session *s, const char *command)
 {
@@ -1480,6 +1480,7 @@ do_child(struct ssh *ssh, Session *s, const char *command)
 	const char *shell, *shell0;
 	struct passwd *pw = s->pw;
 	int r = 0;
+	char *dupshell, *arg_start, *arg_end, *argv0;
 
 	/* remove hostkey from the child's memory */
 	destroy_sensitive_data();
@@ -1628,48 +1629,65 @@ do_child(struct ssh *ssh, Session *s, const char *command)
 	fflush(NULL);
 
 	/* Get the last component of the shell name. */
-	if ((shell0 = strrchr(shell, '/')) != NULL)
+	dupshell = xstrdup(shell);
+	if ((shell0 = strrchr(dupshell, '/')) != NULL)
 		shell0++;
-	else
-		shell0 = shell;
+	 else
+		shell0 = dupshell;
 
+	arg_start = dupshell;
+	r = 0;
+	while (r < (ARGV_MAX - 3)) {
+		argv[r++] = arg_start;
+		arg_end = strchr(arg_start, ' ');
+		if (arg_end == NULL) {
+			break;
+		}
+		*arg_end = '\0';
+		arg_start = ++arg_end;
+	};
+	argv[r] = NULL;
+	/* Replace the argument for command execution. */
+	for (r = 0; r < (ARGV_MAX - 3) && argv[r] != NULL; r ++) {
+		if (strncmp(argv[r], "{docker_tty}", sizeof("{docker_tty}")) == 0) {
+			/* for docker */
+			if (!command) {
+				argv[r] = "-it";
+			} else {
+				argv[r] = "-i";
+			}
+		}
+	}
 	/*
 	 * If we have no command, execute the shell.  In this case, the shell
 	 * name to be passed in argv[0] is preceded by '-' to indicate that
 	 * this is a login shell.
+	 * If we have command, execute the command using the user's shell.
+	 * This uses the -c option to execute the command.
 	 */
 	if (!command) {
-		char argv0[256];
-
+		int len = strlen(shell0) + 2;
+		argv0 = xmalloc(len);
 		/* Start the shell.  Set initial character to '-'. */
 		argv0[0] = '-';
-
-		if (strlcpy(argv0 + 1, shell0, sizeof(argv0) - 1)
-		    >= sizeof(argv0) - 1) {
-			errno = EINVAL;
-			perror(shell);
-			exit(1);
-		}
-
-		/* Execute the shell. */
-		argv[0] = argv0;
-		argv[1] = NULL;
-		execve(shell, argv, env);
-
-		/* Executing the shell failed. */
-		perror(shell);
-		exit(1);
+		strlcpy(argv0 + 1, shell0, len - 1);
+	} else {
+		argv0 = xstrdup(shell0);
+		argv[r++] = "-c";
+		argv[r++] = (char *) command;
 	}
-	/*
-	 * Execute the command using the user's shell.  This uses the -c
-	 * option to execute the command.
-	 */
-	argv[0] = (char *) shell0;
-	argv[1] = "-c";
-	argv[2] = (char *) command;
-	argv[3] = NULL;
-	execve(shell, argv, env);
-	perror(shell);
+	argv[0] = argv0;
+	argv[r++] = NULL;
+
+	for (r = 0; argv[r] != NULL; r ++) {
+		logit("argv[%d] %.100s", r, argv[r]);
+	}
+	logit("dupshell is %.100s", dupshell);
+	execve(dupshell, argv, env);
+	perror(dupshell);
+	/* Free memory */
+	free(argv0);
+	free(dupshell);
 	exit(1);
 }
 
