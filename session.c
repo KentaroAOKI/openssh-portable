@@ -1679,10 +1679,7 @@ do_child(struct ssh *ssh, Session *s, const char *command)
 	argv[0] = argv0;
 	argv[r++] = NULL;
 
-	for (r = 0; argv[r] != NULL; r ++) {
-		logit("argv[%d] %.100s", r, argv[r]);
-	}
-	logit("dupshell is %.100s", dupshell);
+	/* Execute the shell. */
 	execve(dupshell, argv, env);
 	perror(dupshell);
 	/* Free memory */
